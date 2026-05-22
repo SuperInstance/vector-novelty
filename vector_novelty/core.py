@@ -59,12 +59,18 @@ def cosine_distance(a: np.ndarray, b: np.ndarray) -> float:
     0  → identical direction
     1  → orthogonal
     2  → opposite direction
+
+    Degenerate cases (zero-norm, NaN, or Inf vectors) return 1.0
+    (treated as orthogonal) rather than propagating NaN.
     """
     a = np.asarray(a, dtype=np.float32)
     b = np.asarray(b, dtype=np.float32)
-    na = np.linalg.norm(a)
-    nb = np.linalg.norm(b)
-    if na == 0.0 or nb == 0.0:
+    na = float(np.linalg.norm(a))
+    nb = float(np.linalg.norm(b))
+    # Guard against zero norms AND non-finite values (NaN/Inf in inputs produce
+    # NaN or Inf norms, neither of which equals 0.0 — so an explicit finiteness
+    # check is required to avoid silently returning garbage).
+    if not (np.isfinite(na) and np.isfinite(nb)) or na == 0.0 or nb == 0.0:
         return 1.0  # degenerate: treat as orthogonal
     sim = float(np.dot(a, b) / (na * nb))
     sim = max(-1.0, min(1.0, sim))  # clamp for fp safety
