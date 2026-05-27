@@ -15,7 +15,6 @@ __all__ = [
 ]
 
 from dataclasses import dataclass
-from typing import Iterable
 
 import numpy as np
 

@@ -34,6 +34,10 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "pytest-cov",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+    "bandit[toml]",
+    "pip-audit",
 ]
 
 [project.urls]

@@ -21,10 +21,26 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-pip-
+
       - name: Install package
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run tests
-        run: pytest tests/ -q --tb=short
+      - name: Run tests with coverage
+        run: |
+          python -m pytest tests/ -q --tb=short \
+            --cov=vector_novelty \
+            --cov-report=term-missing \
+            --cov-fail-under=75
+
+      - name: Type check (non-blocking)
+        run: python -m mypy vector_novelty/ --ignore-missing-imports --warn-unreachable || true
+
+      - name: Lint (non-blocking)
+        run: python -m ruff check vector_novelty/ || true
