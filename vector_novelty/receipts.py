@@ -27,7 +27,12 @@ __all__ = [
     "fnv1a64",
     "jaccard",
     "shingle_payload",
+    "sign_rows",
     "sweep",
+    "simhash_code",
+    "hamming",
+    "cosine_from_hamming",
+    "sweep_simhash",
     "window_novelty",
     "find_fish",
     "lineage_clusters",
@@ -205,3 +210,79 @@ def lineage_clusters(
         else:
             clusters[home].append(sig)
     return sorted(clusters, key=len, reverse=True)
+
+
+# --- Interference layer (SimHash) -------------------------------------------
+# Jaccard-over-shingles is the zero-order wavefunction: real, non-negative
+# amplitudes — no destructive interference. The first-order upgrade is
+# signed amplitudes. SimHash (Charikar 2002) maps a payload to a 64-bit
+# code where each bit is the sign of one random projection; read as ±1,
+# the code inner product spans [-1, 1] — negatives ARE destructive
+# interference, by construction. cos_sim ≈ cos(π · d_H / 64). At fleet
+# scale (10⁴ cells/tick) raw popcount-vs-all is microseconds — skip the
+# index until ~100k cells (scout-α, Bayardo WWW 2007).
+
+
+def _xi(shingle: int, bit: int) -> int:
+    """Deterministic ±1 for (shingle, bit) — hashed sign function.
+
+    Uses the murmur3 fmix64 finalizer before taking a bit: raw fnv1a64
+    low bits are BIASED on short structured shingles (measured 0.29–0.71),
+    which correlated per-bit sums across payloads and collapsed distinct
+    payloads to identical codes. The finalizer kills the structure."""
+    h = fnv1a64(f"{shingle}:{bit}".encode("ascii"))
+    h ^= h >> 33
+    h = (h * 0xFF51AFD7ED558CCD) & MASK64
+    h ^= h >> 33
+    return 1 if h & 1 else -1
+
+
+def simhash_code(payload: Mapping[str, Any], k: int = 5, dims: int = 64) -> int:
+    """Payload → dims-bit SimHash code via the summed-±1-bits construction.
+
+    Bit b = sign of Σ_shingles ξ(shingle, b). Identical payloads →
+    identical codes; unrelated payloads → ~dims/2 Hamming distance
+    (cos ≈ 0); correlated payloads → positive cos; disjoint-but-adjacent
+    vocabularies can push cos negative — the destructive band Jaccard
+    cannot express."""
+    shingles = shingle_payload(payload, k=k)
+    code = 0
+    for b in range(dims):
+        acc = 0
+        for s in shingles:
+            acc += _xi(s, b)
+        if acc >= 0:
+            code |= 1 << b
+    return code
+
+
+def hamming(a: int, b: int) -> int:
+    return (a ^ b).bit_count()
+
+
+def cosine_from_hamming(distance: int, dims: int = 64) -> float:
+    """Charikar 2002: cos_sim ≈ cos(π · d_H / dims)."""
+    import math
+
+    return math.cos(math.pi * distance / dims)
+
+
+def sweep_simhash(
+    query_payload: Mapping[str, Any],
+    stream: Sequence[Mapping[str, Any]],
+    k: int = 5,
+    dims: int = 64,
+) -> list[tuple[Any, float]]:
+    """Interference-capable sweep: SimHash the query once, popcount against
+    every row's code, return (row_ref, estimated cos) sorted desc.
+
+    Same contract as `sweep`, but amplitudes go negative — rows from a
+    *different* decision vocabulary score below zero instead of clustering
+    at zero, which is what makes related cells reinforce and unrelated
+    cells cancel."""
+    q = simhash_code(query_payload, k=k, dims=dims)
+    out = []
+    for r in stream:
+        d = hamming(q, simhash_code(r.get("payload", {}), k=k, dims=dims))
+        out.append((r.get("row_ref", r.get("tick")), cosine_from_hamming(d, dims)))
+    return sorted(out, key=lambda t: t[1], reverse=True)

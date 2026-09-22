@@ -9,6 +9,7 @@ from vector_novelty.receipts import (
     shingle_payload,
     sign_rows,
     sweep,
+    sweep_simhash,
     window_novelty,
 )
 
@@ -138,3 +139,42 @@ class TestLineage:
         refs = {s.row_ref for s in top}
         assert "z9" not in refs
         assert len(refs) >= 5  # the six choose rows mostly fuse
+
+
+class TestInterference:
+    def test_identical_payloads_cos_one(self):
+        from vector_novelty.receipts import cosine_from_hamming, hamming, simhash_code
+
+        a = simhash_code({"kind": "choose/v1", "choice": 3})
+        b = simhash_code({"choice": 3, "kind": "choose/v1"})
+        assert a == b
+        assert cosine_from_hamming(hamming(a, b)) == 1.0
+
+    def test_unrelated_payloads_around_zero(self):
+        import math
+
+        from vector_novelty.receipts import cosine_from_hamming, hamming, simhash_code
+
+        a = simhash_code({"kind": "draw/v1", "distribution": "svd_init_uniform", "idx": 1})
+        b = simhash_code({"zzz_q": "qqq", "yyy_r": 99, "xxx_s": [1, 2]})
+        est = cosine_from_hamming(hamming(a, b))
+        assert abs(est) < 0.35  # noise band around 0
+
+    def test_sweep_simhash_matches_jaccard_ranking(self):
+        # the interference sweep must agree with the set sweep on the
+        # nearest neighbour — same physics, cheaper amplitudes
+        rows = [
+            _draw("d1", 1, 0, 0.111),
+            _draw("d2", 2, 1, 0.222),
+            _row("x1", "REFUSED", 3, {"reason": "rate_limited"}),
+        ]
+        by_sets = dict(sweep(sign_rows(rows)[0], sign_rows(rows)))
+        by_codes = dict(sweep_simhash(rows[0]["payload"], rows))
+        assert by_codes["d2"] > by_codes["x1"]
+        assert by_sets["d2"] > by_sets["x1"]
+
+    def test_simhash_is_deterministic(self):
+        from vector_novelty.receipts import simhash_code
+
+        p = {"kind": "draw/v1", "draw_index": 7, "result": 0.42}
+        assert simhash_code(p) == simhash_code(p)
