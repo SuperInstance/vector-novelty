@@ -1,6 +1,7 @@
 """Tests for the GF(3)/3-valued ternary adapter (semantics pinned against
 the Ternary Fleet's own test tables per scout-γ 2026-09-22)."""
 
+import pytest
 import unittest
 
 from vector_novelty.ternary import (
@@ -12,7 +13,9 @@ from vector_novelty.ternary import (
     cos_to_trit,
     kleene_and,
     kleene_or,
+    lukasiewicz_implication,
     sweep_to_trit_field,
+    tutor_equal,
 )
 
 
@@ -124,3 +127,71 @@ class TestSweepToTritField(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGraded:
+    """The graded-truth layer: what lives between the trit band and the raw
+    cosine. Scout-gamma NOT FOUND (ternary-logic is 3-valued only); scout-delta
+    found the historical precedent (TUTOR `compute`, 1972: equality as a
+    similarity threshold)."""
+
+    def test_lukasiewicz_tautology_bound(self):
+        # a <= b implies a -> b is fully true (the implication's defining law)
+        assert lukasiewicz_implication(0.7, 0.9) == pytest.approx(1.0)
+        assert lukasiewicz_implication(0.7, 0.7) == pytest.approx(1.0)
+
+    def test_lukasiewicz_partial(self):
+        assert lukasiewicz_implication(0.7, 0.4) == pytest.approx(0.7)
+        assert lukasiewicz_implication(1.0, 0.0) == pytest.approx(0.0)
+
+    def test_lukasiewicz_clamps_inputs(self):
+        # designated-value discipline: inputs outside [0,1] are clamped
+        assert lukasiewicz_implication(1.4, 0.4) == lukasiewicz_implication(1.0, 0.4)
+        assert lukasiewicz_implication(0.7, -0.5) == lukasiewicz_implication(0.7, 0.0)
+
+    def test_lukasiewicz_collapses_to_l3_on_trit_values(self):
+        # U -> U = T, T -> U = U, T -> F = F (the pinned L3 tables, on 0/0.5/1)
+        assert lukasiewicz_implication(0.5, 0.5) == 1.0
+        assert lukasiewicz_implication(1.0, 0.5) == 0.5
+        assert lukasiewicz_implication(1.0, 0.0) == 0.0
+
+    def test_tutor_equal_exact_and_within_roundoff(self):
+        # TUTOR compute (1972): x = y TRUE for approximately-equal floats
+        assert tutor_equal(0.875, 0.875) == 1.0
+        assert tutor_equal(0.8750000001, 0.875) == 1.0
+        assert tutor_equal(0.8751, 0.875, tol=1e-3) == 1.0
+
+    def test_tutor_equal_decays_past_tolerance(self):
+        # linear decay to 0 at twice the tolerance — a threshold as an operator
+        assert tutor_equal(0.890, 0.875, tol=0.01) == pytest.approx(0.5)  # d = 1.5*tol
+        assert tutor_equal(0.895, 0.875, tol=0.01) == pytest.approx(0.0)  # d = 2*tol
+        assert tutor_equal(2.0, 0.875, tol=0.01) == 0.0
+
+    def test_graded_lives_outside_the_trit_field(self):
+        # the band (U) is instrument noise; the grade is instrument reading.
+        # a graded value inside the noise band must not collapse to a trit.
+        # same reading, two instruments: the grade says 0.75, the band says U
+        g = tutor_equal(0.325, 0.30, tol=0.02)  # d = 1.25*tol -> 0.75
+        assert g == pytest.approx(0.75)
+        assert cos_to_trit(0.325, tau=0.35) is Trit.Zero  # and the band still says U
+
+
+class TestEchogramWalkExample:
+    """The bridge for outside engineers must stay runnable — the example is
+    part of the contract (Casey 2026-09-22: 'make the bridges easy')."""
+
+    def test_example_runs_end_to_end(self):
+        import contextlib
+        import io
+        import os
+        import runpy
+
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            runpy.run_path(os.path.join(repo_root, "examples", "echogram_walk.py"), run_name="__main__")
+        out = buf.getvalue()
+        assert "3-valued echogram" in out
+        assert "construct" in out
+        assert "compose_transition(Pos, None) = Zero" in out
+        assert "tutor_equal" in out

@@ -36,6 +36,8 @@ __all__ = [
     "bochvar_and",
     "consensus",
     "sweep_to_trit_field",
+    "lukasiewicz_implication",
+    "tutor_equal",
 ]
 
 # Instrument constant: the measured SimHash noise band for unrelated
@@ -142,3 +144,42 @@ def sweep_to_trit_field(cos_estimates: Mapping[Any, float], tau: float = TRIT_CO
     destruct} per cell: the argmax instrument's worldview and the
     interference instrument's, reconciled."""
     return {cell: cos_to_trit(c, tau) for cell, c in cos_estimates.items()}
+
+
+# ---------------------------------------------------------------------------
+# Graded truth — the layer between the trit band and the raw cosine.
+# Scout-γ NOT FOUND (ternary-logic is 3-valued only; ~5 lines absent).
+# Scout-δ found the historical precedent: TUTOR's `compute` command (1972)
+# compiled student expressions and checked numerical equivalence within
+# roundoff — x=y was TRUE for approximately-equal floats. The language's
+# equality operator was itself a similarity threshold. These functions are
+# the fusion: Ł_aleph (1930s) × TUTOR compute (1972) × receipt amplitudes
+# (2026). Pure stdlib; graded reals stay OUT of the Trit field on purpose —
+# the band (U) is instrument noise, the grade is instrument reading.
+# ---------------------------------------------------------------------------
+
+
+def lukasiewicz_implication(a: float, b: float) -> float:
+    """Ł_aleph graded implication: min(1, 1 - a + b), clamped to [0, 1].
+
+    The designated 3-valued case collapses to L3 (U→U = T, T→U = U);
+    on graded reals it is the truth value of 'a brings about b' —
+    'perspective 0.7 en route' composes without leaving the reals.
+    Inputs outside [0, 1] are clamped, matching ternary-logic's
+    designated-value discipline."""
+    a = min(1.0, max(0.0, a))
+    b = min(1.0, max(0.0, b))
+    return min(1.0, 1.0 - a + b)
+
+
+def tutor_equal(a: float, b: float, tol: float = 1e-6) -> float:
+    """Graded equality, TUTOR `compute` semantics (1972): the truth value
+    of 'a ≈ b within roundoff'. Returns 1.0 inside tolerance, decaying
+    linearly to 0.0 at twice the tolerance — a similarity threshold as
+    an operator, exactly as TUTOR's equality was."""
+    if a == b:
+        return 1.0
+    d = abs(a - b)
+    if d <= tol:
+        return 1.0
+    return max(0.0, 1.0 - (d - tol) / tol)
